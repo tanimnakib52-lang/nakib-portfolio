@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Nakib Mahmud Tanim — Portfolio</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -351,25 +351,22 @@
       animation: fadeUp 0.7s ease-out 0.6s forwards;
     }
 
-    .scroll-hint {
-      position: absolute;
-      bottom: 24px;
-      left: 50%;
-      transform: translateX(-50%);
+    .scroll-hint-inline {
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 6px;
-      color: rgba(224,224,240,0.2);
+      color: rgba(224,224,240,0.25);
       font-family: 'Space Mono', monospace;
       font-size: 0.6rem;
       letter-spacing: 0.08em;
+      margin-top: 28px;
       opacity: 0;
       animation: fadeIn 1.2s ease 2.2s forwards;
     }
-    .scroll-line {
+    .scroll-line-inline {
       width: 1.5px; height: 32px;
-      background: linear-gradient(to bottom, rgba(224,224,240,0.2), transparent);
+      background: linear-gradient(to bottom, rgba(224,224,240,0.25), transparent);
       animation: scrollPulse 1.8s ease-in-out infinite;
     }
     @keyframes scrollPulse { 0%,100%{opacity:0.2} 50%{opacity:0.7} }
@@ -706,7 +703,7 @@
         animation-iteration-count: 1 !important;
         transition-duration: 0.01ms !important;
       }
-      .scroll-line { animation: none; }
+      .scroll-line-inline { animation: none; }
       .nav-dot { animation: none; opacity: 1; }
       .hamburger span { transition: none; }
     }
@@ -774,10 +771,10 @@
               <i class="fa-solid fa-download"></i> Download CV
             </a>
         </div>
-      </div>
-      <div class="scroll-hint">
-        <span>scroll</span>
-        <span class="scroll-line"></span>
+        <div class="scroll-hint-inline">
+          <span>scroll</span>
+          <span class="scroll-line-inline"></span>
+        </div>
       </div>
     </div>
   </section>
@@ -1000,7 +997,7 @@
 
   function buildStars(){
     stars=[];
-    var n = Math.floor(W*H/1200); // Slightly fewer stars for better performance
+    var n = Math.floor(W*H/700); // More stars
     for(var i=0;i<n;i++){
       var sz = Math.random();
       stars.push({
@@ -1186,7 +1183,7 @@ document.addEventListener('touchend', function(e) {
 
 // Prevent overscroll on iOS
 document.addEventListener('touchmove', function(e) {
-  if (e.scale !== 1) { e.preventDefault(); }
+  if (e.touches && e.touches.length > 1) { e.preventDefault(); }
 }, {passive: false});
 </script>
 </body>
