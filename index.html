@@ -707,7 +707,49 @@
       .nav-dot { animation: none; opacity: 1; }
       .hamburger span { transition: none; }
     }
-  </style>
+  
+    /* ===== EARTH IN HERO ===== */
+    #hero .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 40px;
+    }
+    .hero-inner {
+      max-width: 480px !important;
+      text-align: left !important;
+      flex-shrink: 0;
+      z-index: 2;
+    }
+    .hero-eyebrow { justify-content: flex-start !important; }
+    .hero-ctas    { justify-content: flex-start !important; }
+    #heroEarthWrap {
+      flex-shrink: 0;
+      width: clamp(260px, 38vw, 460px);
+      height: clamp(260px, 38vw, 460px);
+      pointer-events: none;
+      z-index: 1;
+      opacity: 0;
+      animation: earthFadeIn 2s ease 1s forwards;
+      /* circular mask — hides poles */
+      border-radius: 50%;
+      overflow: hidden;
+    }
+    @keyframes earthFadeIn { to { opacity: 1; } }
+    #heroEarthWrap canvas {
+      width: 100% !important;
+      height: 100% !important;
+      display: block;
+      border-radius: 50%;
+    }
+    @media (max-width: 900px) {
+      #hero .container { flex-direction: column; align-items: center; }
+      .hero-inner { max-width: 100% !important; text-align: center !important; }
+      .hero-eyebrow { justify-content: center !important; }
+      .hero-ctas    { justify-content: center !important; }
+      #heroEarthWrap { width: 220px; height: 220px; pointer-events: auto; }
+    }
+</style>
 </head>
 <body>
 
@@ -776,6 +818,7 @@
           <span class="scroll-line-inline"></span>
         </div>
       </div>
+      <div id="heroEarthWrap"><canvas id="heroEarthCanvas"></canvas></div>
     </div>
   </section>
 
@@ -1186,5 +1229,222 @@ document.addEventListener('touchmove', function(e) {
   if (e.touches && e.touches.length > 1) { e.preventDefault(); }
 }, {passive: false});
 </script>
+
+  <!-- ===== EARTH 3D ===== -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+  <script>
+  (function(){
+    var canvas=document.getElementById('heroEarthCanvas');
+    if(!canvas||typeof THREE==='undefined') return;
+    var wrap=document.getElementById('heroEarthWrap');
+
+    function getSize(){ return wrap.clientWidth||400; }
+    var S=getSize();
+    canvas.width=S*Math.min(devicePixelRatio,2);
+    canvas.height=S*Math.min(devicePixelRatio,2);
+
+    var scene=new THREE.Scene();
+    var camera=new THREE.PerspectiveCamera(42,1,0.1,100);
+    camera.position.set(0, 0.15, 2.5);
+    camera.lookAt(0, 0, 0);
+    var renderer=new THREE.WebGLRenderer({canvas:canvas,antialias:true,alpha:true,powerPreference:'high-performance'});
+    renderer.setSize(canvas.width,canvas.height,false);
+    renderer.setClearColor(0x000000,0);
+
+    var tl=new THREE.TextureLoader();
+    tl.crossOrigin='anonymous';
+    var BASE='https://unpkg.com/three-globe@2.31.2/example/img/';
+    var texDay   =tl.load(BASE+'earth-day.jpg');
+    var texNight =tl.load('https://raw.githubusercontent.com/mrdoob/three.js/master/examples/textures/planets/earth_lights_2048.png');
+    var texCloud =tl.load(BASE+'earth-clouds.png');
+
+    /* Day/Night shader — world-space sun so day/night stays fixed as Earth rotates */
+    var earthMat=new THREE.ShaderMaterial({
+      uniforms:{
+        dayTex:  {value:texDay},
+        nightTex:{value:texNight},
+        sunDir:  {value:new THREE.Vector3(1.0,0.15,0.0).normalize()}
+      },
+      vertexShader:[
+        'varying vec2 vUv;',
+        'varying vec3 vNormalWorld;',
+        'varying vec3 vNormalView;',
+        'varying vec3 vPosWorld;',
+        'varying vec3 vPos;',
+        'void main(){',
+        '  vUv=uv;',
+        '  vNormalWorld=normalize((modelMatrix*vec4(normal,0.0)).xyz);',
+        '  vNormalView=normalize(normalMatrix*normal);',
+        '  vPosWorld=(modelMatrix*vec4(position,1.0)).xyz;',
+        '  vPos=(modelViewMatrix*vec4(position,1.0)).xyz;',
+        '  gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);',
+        '}'
+      ].join('\n'),
+      fragmentShader:[
+        'uniform sampler2D dayTex,nightTex;',
+        'uniform vec3 sunDir;',
+        'varying vec2 vUv;',
+        'varying vec3 vNormalWorld;',
+        'varying vec3 vNormalView;',
+        'varying vec3 vPosWorld;',
+        'varying vec3 vPos;',
+        'void main(){',
+        '  vec3 n=normalize(vNormalWorld);',
+        '  vec3 nv=normalize(vNormalView);',
+        '  vec3 sd=normalize(sunDir);',
+        '  float sun=dot(n,sd);',
+        '',
+        '  vec4 day=texture2D(dayTex,vUv);',
+        '  vec4 night=texture2D(nightTex,vUv);',
+        '',
+        /* sharp terminator — clearer day/night boundary */
+        '  float blend=smoothstep(-0.02, 0.08, sun);',
+        '',
+        /* --- CITY LIGHTS on night side --- */
+        /* Strict threshold to kill any JPEG noise, ensuring perfect pitch black night */
+        '  float lightLevel = max(0.0, night.r - 0.1);',
+        '  vec3 cityLights = lightLevel * vec3(1.0, 0.9, 0.6) * 3.5;',
+        '  vec3 cityBloom = pow(lightLevel, 1.5) * vec3(1.0, 0.7, 0.3) * 2.0;',
+        /* night side is a very faint ambient color instead of pitch black */
+        '  vec3 nightBase = cityLights + cityBloom + vec3(0.015, 0.02, 0.03);',
+        '',
+        /* mix day and night */
+        '  vec3 col=mix(nightBase,day.rgb,blend);',
+        '',
+        /* atmosphere fresnel — blue on day side, NO haze on night */
+        '  vec3 viewDir=normalize(-vPos);',
+        '  float fr=pow(1.0-max(dot(viewDir,nv),0.0),3.0);',
+        '  vec3 dayAtm=vec3(0.3,0.6,1.0);',
+        '  vec3 nightAtm=vec3(0.0);', /* pure black night atmosphere */
+        '  vec3 atm=mix(nightAtm,dayAtm,blend)*fr*0.75;',
+        '',
+        /* ocean specular on day side */
+        '  float spec=0.0;',
+        '  if(day.b>day.r*1.1 && blend>0.3){',
+        '    vec3 viewD=normalize(cameraPosition-vPosWorld);',
+        '    vec3 h=normalize(sd+viewD);',
+        '    spec=pow(max(dot(n,h),0.0),90.0)*0.5*max(sun,0.0);',
+        '  }',
+        '',
+        '  gl_FragColor=vec4(col+atm+spec,1.0);',
+        '}'
+      ].join('\n')
+    });
+
+    var earth=new THREE.Mesh(new THREE.SphereGeometry(1,128,128),earthMat);
+    /* tilt like real Earth 23.5 deg — ZYX order prevents pole gimbal issues */
+    earth.rotation.order='ZYX';
+    earth.rotation.z=0.41;
+    scene.add(earth);
+
+    var cloudMat=new THREE.ShaderMaterial({
+      uniforms:{
+        map:{value:texCloud},
+        sunDir:{value:new THREE.Vector3(1.0,0.15,0.0).normalize()}
+      },
+      transparent:true,
+      depthWrite:false,
+      vertexShader:[
+        'varying vec2 vUv;',
+        'varying vec3 vNormalWorld;',
+        'void main(){',
+        '  vUv=uv;',
+        '  vNormalWorld=normalize((modelMatrix*vec4(normal,0.0)).xyz);',
+        '  gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);',
+        '}'
+      ].join('\n'),
+      fragmentShader:[
+        'uniform sampler2D map;',
+        'uniform vec3 sunDir;',
+        'varying vec2 vUv;',
+        'varying vec3 vNormalWorld;',
+        'void main(){',
+        '  vec4 c=texture2D(map,vUv);',
+        '  float poleFade=smoothstep(0.12,0.25,vUv.y)*(1.0-smoothstep(0.75,0.88,vUv.y));',
+        '  float sun=dot(normalize(vNormalWorld),normalize(sunDir));',
+        '  float light=smoothstep(-0.2,0.2,sun);',
+        '  vec3 cloudCol=mix(vec3(0.02,0.05,0.1),vec3(1.0),light);',
+        '  gl_FragColor=vec4(cloudCol, c.r * 0.7 * poleFade);',
+        '}'
+      ].join('\n')
+    });
+    var clouds=new THREE.Mesh(new THREE.SphereGeometry(1.007,128,128),cloudMat);
+    clouds.rotation.order='ZYX';
+    clouds.rotation.z=0.41;
+    scene.add(clouds);
+
+    /* outer atmosphere */
+    var atmMat=new THREE.ShaderMaterial({
+      uniforms:{glowColor:{value:new THREE.Color(0.22,0.52,1.0)}},
+      vertexShader:'varying vec3 vN;void main(){vN=normalize(normalMatrix*normal);gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
+      fragmentShader:'uniform vec3 glowColor;varying vec3 vN;void main(){float i=pow(0.65-dot(vN,vec3(0.0,0.0,1.0)),3.8);gl_FragColor=vec4(glowColor,i*0.7);}',
+      side:THREE.BackSide,blending:THREE.AdditiveBlending,transparent:true,depthWrite:false
+    });
+    scene.add(new THREE.Mesh(new THREE.SphereGeometry(1.065,128,128),atmMat));
+
+    var sunL=new THREE.DirectionalLight(0xfff5e4,2.2);
+    sunL.position.set(5,0.75,0);
+    scene.add(sunL);
+    scene.add(new THREE.AmbientLight(0x080810,0.5));
+
+    /* auto rotation — 1 full rotation per minute = 2π/60 per second */
+    var ROT_SPEED = (2*Math.PI)/60;  /* rad/sec */
+    var cloudOff=0;
+    var lastTime=performance.now();
+
+    /* drag */
+    var drag=false,prev={x:0,y:0},velX=0,velY=0,extraRotX=0,extraRotY=0;
+    canvas.style.pointerEvents='auto';
+    canvas.addEventListener('mousedown',function(e){drag=true;prev={x:e.clientX,y:e.clientY};},{passive:true});
+    window.addEventListener('mousemove',function(e){
+      if(!drag)return;
+      velX+=(e.clientX-prev.x)*0.005;
+      velY+=(e.clientY-prev.y)*0.005;
+      prev={x:e.clientX,y:e.clientY};
+    },{passive:true});
+    window.addEventListener('mouseup',function(){drag=false;},{passive:true});
+    canvas.addEventListener('touchstart',function(e){drag=true;prev={x:e.touches[0].clientX,y:e.touches[0].clientY};},{passive:true});
+    window.addEventListener('touchmove',function(e){
+      if(!drag)return;
+      velX+=(e.touches[0].clientX-prev.x)*0.006;
+      velY+=(e.touches[0].clientY-prev.y)*0.006;
+      prev={x:e.touches[0].clientX,y:e.touches[0].clientY};
+    },{passive:true});
+    window.addEventListener('touchend',function(){drag=false;},{passive:true});
+
+    window.addEventListener('resize',function(){
+      var ns=getSize();
+      canvas.width=ns*Math.min(devicePixelRatio,2);
+      canvas.height=ns*Math.min(devicePixelRatio,2);
+      renderer.setSize(canvas.width,canvas.height,false);
+    },{passive:true});
+
+    (function animate(){
+      requestAnimationFrame(animate);
+      var now=performance.now();
+      var dt=Math.min((now-lastTime)/1000,0.05);
+      lastTime=now;
+
+      /* auto spin */
+      extraRotY+=velX;
+      extraRotX+=velY;
+      /* limit up/down rotation to avoid flipping */
+      extraRotX=Math.max(-Math.PI/2.5, Math.min(Math.PI/2.5, extraRotX));
+      
+      velX*=0.90;
+      velY*=0.90;
+      cloudOff+=0.00008;
+
+      var autoY=ROT_SPEED*now/1000;
+      earth.rotation.y = autoY+extraRotY;
+      earth.rotation.x = extraRotX;
+      clouds.rotation.y= autoY+extraRotY+cloudOff;
+      clouds.rotation.x= extraRotX;
+
+      renderer.render(scene,camera);
+    })();
+  })();
+  </script>
+
 </body>
 </html>
