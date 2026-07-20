@@ -220,8 +220,13 @@
   canvas.addEventListener('pointerup', function () { drag = false; });
   canvas.addEventListener('pointercancel', function () { drag = false; });
 
+  var lastSize = S;
   window.addEventListener('resize', function () {
     var ns = getSize();
+    /* mobile URL bar show/hide fires resize without changing the wrap —
+       skip, so the WebGL canvas isn't needlessly cleared mid-scroll */
+    if (ns === lastSize) return;
+    lastSize = ns;
     canvas.width = ns * DPR;
     canvas.height = ns * DPR;
     renderer.setSize(canvas.width, canvas.height, false);

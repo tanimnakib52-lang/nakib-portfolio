@@ -40,9 +40,23 @@
 
   function rand(a, b) { return Math.random() * (b - a) + a; }
 
+  /* The canvas is locked to the LARGE viewport height (100lvh): on mobile,
+     the URL bar hiding/showing while scrolling changes innerHeight, and
+     resizing the canvas to follow it made the background visibly "zoom". */
+  function largeViewportH() {
+    var probe = document.createElement('div');
+    probe.style.cssText = 'position:fixed;top:0;left:0;width:1px;height:100lvh;visibility:hidden;pointer-events:none;';
+    document.body.appendChild(probe);
+    var h = probe.offsetHeight;
+    probe.parentNode.removeChild(probe);
+    return h || window.innerHeight; /* older browsers without lvh */
+  }
+
   function resize() {
     W = window.innerWidth;
-    H = window.innerHeight;
+    H = Math.max(largeViewportH(), window.innerHeight);
+    cv.style.width = W + 'px';
+    cv.style.height = H + 'px';
     cv.width = W * dpr;
     cv.height = H * dpr;
     cx.setTransform(dpr, 0, 0, dpr, 0, 0);
@@ -175,11 +189,14 @@
     my = H / 2 + (e.beta || 0) * 6;
   }, { passive: true });
 
-  /* Debounced resize */
+  /* Debounced resize — height-only changes from the mobile URL bar are
+     ignored (the canvas already covers the large viewport), so scrolling
+     never rescales the background */
   var resizeTimer;
   window.addEventListener('resize', function () {
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(function () {
+      if (window.innerWidth === W && window.innerHeight <= H) return;
       resize();
       if (reducedMotion) drawFrame();
     }, 150);
@@ -197,6 +214,34 @@
   } else {
     start();
   }
+})();
+
+/* ======= PREVENT ACCIDENTAL ZOOM WHILE SCROLLING (mobile) ======= */
+(function () {
+  /* iOS Safari ignores the viewport zoom lock, but its proprietary
+     gesture events can be cancelled — this stops pinch zoom there */
+  ['gesturestart', 'gesturechange', 'gestureend'].forEach(function (ev) {
+    document.addEventListener(ev, function (e) { e.preventDefault(); }, { passive: false });
+  });
+
+  /* Fallback for browsers that honour neither the meta tag nor touch-action:
+     cancel any two-finger pan/pinch on the page */
+  document.addEventListener('touchmove', function (e) {
+    if (e.touches.length > 1) e.preventDefault();
+  }, { passive: false });
+
+  /* Block double-tap zoom on non-interactive areas: a second tap within
+     300 ms is swallowed. Links and buttons are left alone so fast taps
+     on them keep working. */
+  var lastTouchEnd = 0;
+  document.addEventListener('touchend', function (e) {
+    var now = Date.now();
+    if (now - lastTouchEnd <= 300 && e.cancelable &&
+        !(e.target.closest && e.target.closest('a, button'))) {
+      e.preventDefault();
+    }
+    lastTouchEnd = now;
+  }, { passive: false });
 })();
 
 /* ======= NAV SCROLL STATE ======= */
